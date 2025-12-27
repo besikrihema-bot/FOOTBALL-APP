@@ -1,6 +1,10 @@
 import streamlit as st
-import random
+import pandas as pd
+import numpy as np
 import time
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import r2_score
 
 # --- Page Configuration ---
 st.set_page_config(
@@ -10,16 +14,15 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- Custom CSS for Dark/Green Theme using Glassmorphism ---
+# --- Custom CSS (Preserved) ---
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700&display=swap');
     
-    /* General Settings */
     [data-testid="stAppViewContainer"] {
         background-color: #0f172a;
         background-image: 
-            radial-gradient(circle at 10% 20%, rgba(57, 255, 20, 0.05) 0%, transparent 40%),
+            radial-gradient(circle at 10% 20%, rgba(0, 229, 255, 0.05) 0%, transparent 40%),
             radial-gradient(circle at 90% 80%, rgba(255, 215, 0, 0.05) 0%, transparent 40%);
         font-family: 'Cairo', sans-serif;
         direction: rtl;
@@ -31,98 +34,131 @@ st.markdown("""
         border-left: 1px solid rgba(255, 255, 255, 0.1);
     }
     
-    /* Headers */
-    h1, h2, h3 {
-        font-family: 'Cairo', sans-serif !important;
-        color: #f1f5f9 !important;
-    }
-    
+    h1, h2, h3 { font-family: 'Cairo', sans-serif !important; color: #f1f5f9 !important; }
     h1 {
         text-align: center;
-        background: linear-gradient(135deg, #39ff14 0%, #22c55e 100%);
+        background: linear-gradient(135deg, #00e5ff 0%, #2979ff 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         font-weight: 700 !important;
         margin-bottom: 2rem !important;
     }
     
-    /* Inputs */
-    .stTextInput input, .stNumberInput input, .stSelectbox, .stSlider {
-        font-family: 'Cairo', sans-serif !important;
+    /* Sliders */
+    div.stSlider > div[data-baseweb="slider"] > div > div { background-color: #00e5ff !important; }
+    div.stSlider > div[data-baseweb="slider"] > div > div > div {
+        background-color: #ffffff !important;
+        border: 2px solid #00e5ff;
+        width: 20px !important; height: 20px !important;
+        border-radius: 50% !important;
+        box-shadow: 0 0 10px rgba(0, 229, 255, 0.5);
     }
+    .stSlider label { color: #00e5ff !important; font-weight: 600; font-size: 1.1rem !important; }
     
     /* Buttons */
     .stButton > button {
         width: 100%;
-        background: linear-gradient(135deg, #39ff14 0%, #22c55e 100%);
-        color: #000 !important;
-        font-weight: 700 !important;
-        border: none;
-        padding: 0.75rem 1rem;
-        border-radius: 0.75rem;
-        transition: transform 0.2s, box-shadow 0.2s;
-        font-size: 1.2rem !important;
+        background: linear-gradient(135deg, #00e5ff 0%, #2979ff 100%);
+        color: #000 !important; font-weight: 700 !important;
+        font-size: 1.2rem !important; border-radius: 0.75rem;
     }
+    .stButton > button:hover { transform: translateY(-2px); box-shadow: 0 4px 20px rgba(0, 229, 255, 0.4); }
     
-    .stButton > button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 4px 20px rgba(57, 255, 20, 0.4);
-        border-color: #39ff14 !important;
-    }
-    
-    /* Success/Results Box */
+    /* Results */
     .result-box {
-        background: rgba(30, 41, 59, 0.7);
-        backdrop-filter: blur(10px);
-        border: 1px solid rgba(57, 255, 20, 0.3);
-        border-radius: 1rem;
-        padding: 2rem;
-        text-align: center;
-        margin-top: 2rem;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
+        background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(10px);
+        border: 1px solid rgba(0, 229, 255, 0.3); border-radius: 1rem;
+        padding: 2rem; text-align: center; margin-top: 2rem;
     }
+    .market-value { font-size: 3rem; font-weight: 700; color: #ffd700; text-shadow: 0 0 20px rgba(255, 215, 0, 0.3); margin: 1rem 0; }
+    .player-class { font-size: 1.5rem; color: #f1f5f9; margin-bottom: 1rem; padding: 0.5rem; background: rgba(255, 255, 255, 0.05); border-radius: 0.5rem; }
     
-    .market-value {
-        font-size: 3rem;
-        font-weight: 700;
-        color: #ffd700;
-        text-shadow: 0 0 20px rgba(255, 215, 0, 0.3);
-        margin: 1rem 0;
-    }
-    
-    .player-class {
-        font-size: 1.5rem;
-        color: #f1f5f9;
-        margin-bottom: 1rem;
-        padding: 0.5rem;
-        background: rgba(255, 255, 255, 0.05);
-        border-radius: 0.5rem;
-    }
-    
-    /* Hide Default Streamlit Elements */
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-    
+    #MainMenu {visibility: hidden;} footer {visibility: hidden;}
 </style>
 """, unsafe_allow_html=True)
 
+# --- ML Core Logic ---
+@st.cache_resource
+def train_model():
+    # 1. Generate Synthetic Data
+    n_samples = 2000
+    np.random.seed(42)
+    
+    data = {
+        'age': np.random.randint(16, 40, n_samples),
+        'height': np.random.normal(180, 7, n_samples),
+        'league_coef': np.random.choice([2.0, 3.0, 3.5, 3.8, 4.0, 4.5, 4.8, 5.0], n_samples),
+        'influence_mult': np.random.choice([0.6, 0.8, 1.0, 1.2], n_samples),
+        'rating': np.random.normal(70, 10, n_samples),
+        'matches': np.random.randint(0, 50, n_samples),
+        'goals_assists': np.random.randint(0, 30, n_samples),
+        'discipline': np.random.randint(1, 11, n_samples), # 1-10
+        'injury_coef': np.random.choice([0.6, 0.7, 0.9, 1.0], n_samples),
+        'fame': np.random.randint(1, 6, n_samples)
+    }
+    
+    df = pd.DataFrame(data)
+    
+    # Calculate Target Value (Price) using a complex formula to simulate reality
+    # We use this to "teach" the model the pattern
+    df['performance_ratio'] = df['goals_assists'] / (df['matches'] + 1)
+    
+    def calculate_price(row):
+        base = 50000
+        rating_factor = pow(1.11, (row['rating'] - 50))
+        
+        # Age curve
+        age_factor = 1.0
+        if row['age'] < 22: age_factor = 1.0 + ((22 - row['age']) * 0.1)
+        elif row['age'] > 29: age_factor = max(0.1, 1.0 - ((row['age'] - 29) * 0.15))
+        
+        price = (base * rating_factor * row['league_coef'] * 
+                 row['influence_mult'] * row['injury_coef'] * 
+                 age_factor * (1 + row['fame']*0.15))
+                 
+        if row['performance_ratio'] > 0.5: price *= 1.3
+        
+        # Add noise
+        price *= np.random.uniform(0.9, 1.1)
+        return int(price)
+
+    df['market_value'] = df.apply(calculate_price, axis=1)
+    
+    # 2. Train Test Split
+    X = df.drop(['market_value', 'performance_ratio'], axis=1) # features only
+    y = df['market_value']
+    
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
+    
+    # 3. Random Forest
+    model = RandomForestRegressor(n_estimators=100, random_state=42)
+    model.fit(X_train, y_train)
+    
+    # Evaluate
+    score = model.score(X_test, y_test)
+    
+    return model, score
+
+# Train model immediately
+with st.spinner('جاري تدريب نموذج الذكاء الاصطناعي (Random Forest)...'):
+    model, accuracy = train_model()
+
 # --- Header ---
 st.markdown("<h1>تحليل أسعار لاعبي كرة القدم</h1>", unsafe_allow_html=True)
-st.markdown("<p style='text-align: center; color: #94a3b8; margin-top: -20px; margin-bottom: 40px;'>أداة احترافية لتقدير القيمة السوقية باستخدام المحاكاة الذكية</p>", unsafe_allow_html=True)
+st.caption(f"🤖 حالة النموذج: مدرب وجاهز | 📊 دقة الاختبار (R²): {accuracy:.2f}")
 
-# --- Form Section ---
+# --- Form ---
 with st.container():
     col1, col2 = st.columns(2)
     
     with col1:
         st.markdown("### 👤 المعلومات الشخصية")
-        age = st.number_input("العمر (سنة)", min_value=15, max_value=45, value=24)
+        age = st.number_input("العمر", 15, 45, 24)
         nationality = st.text_input("الجنسية", placeholder="مثال: مصري")
         foot = st.selectbox("القدم المفضلة", ["اليمنى", "اليسرى", "كلتاهما"])
-        
         st.markdown("### 📏 البنية الجسدية")
-        height = st.number_input("الطول (سم)", min_value=150, max_value=220, value=180)
-        weight = st.number_input("الوزن (كجم)", min_value=50, max_value=120, value=75)
+        height = st.number_input("الطول (سم)", 150, 220, 180)
+        weight = st.number_input("الوزن (كجم)", 50, 120, 75)
 
     with col2:
         st.markdown("### ⚽ المعلومات الكروية")
@@ -133,42 +169,33 @@ with st.container():
         ])
         
         league_options = {
-            "الدوري الإنجليزي (Premier League)": 5.0,
-            "الدوري الإسباني (La Liga)": 4.8,
-            "الدوري الألماني (Bundesliga)": 4.5,
-            "الدوري الإيطالي (Serie A)": 4.5,
-            "الدوري الفرنسي (Ligue 1)": 4.0,
-            "الدوري السعودي (Roshn League)": 3.8,
-            "الدوري البرتغالي/الهولندي": 3.5,
-            "دوريات أخرى (أوروبا/أمريكا الجنوبية)": 3.0,
-            "دوريات أضعف": 2.0
+            "الدوري الإنجليزي (Premier League)": 5.0, "الدوري الإسباني (La Liga)": 4.8,
+            "الدوري الألماني (Bundesliga)": 4.5, "الدوري الإيطالي (Serie A)": 4.5,
+            "الدوري الفرنسي (Ligue 1)": 4.0, "الدوري السعودي (Roshn League)": 3.8,
+            "الدوري البرتغالي/الهولندي": 3.5, "دوريات أخرى": 3.0, "دوريات أضعف": 2.0
         }
         league_name = st.selectbox("الدوري الحالي", list(league_options.keys()))
         league_coef = league_options[league_name]
         
         influence_options = {
-            "نجم الفريق (Key Player)": 1.2,
-            "لاعب أساسي (Regular)": 1.0,
-            "لاعب تدوير (Rotation)": 0.8,
-            "احتياطي (Substitute)": 0.6
+            "نجم الفريق (Key Player)": 1.2, "لاعب أساسي (Regular)": 1.0,
+            "لاعب تدوير (Rotation)": 0.8, "احتياطي (Substitute)": 0.6
         }
         influence_name = st.selectbox("التأثير في الفريق", list(influence_options.keys()))
         influence_mult = influence_options[influence_name]
         
-        experience = st.number_input("سنوات الخبرة", min_value=0, max_value=25, value=5)
+        experience = st.number_input("سنوات الخبرة", 0, 25, 5)
 
     st.divider()
     
     # Attributes
     col3, col4 = st.columns(2)
-    
     with col3:
         st.markdown("### ⚡ القدرات البدنية")
         speed = st.slider("السرعة", 0, 100, 70)
         strength = st.slider("القوة البدنية", 0, 100, 70)
         stamina = st.slider("التحمل", 0, 100, 70)
         agility = st.slider("الرشاقة", 0, 100, 70)
-
     with col4:
         st.markdown("### 🎯 القدرات الفنية")
         skill = st.slider("المهارة", 0, 100, 70)
@@ -179,113 +206,72 @@ with st.container():
 
     st.divider()
     
-    st.markdown("### 📊 الأداء والانضباط")
+    st.markdown("### 📢 الشهرة والأداء")
     col5, col6, col7 = st.columns(3)
-    with col5:
-        matches = st.number_input("مباريات آخر موسم", value=30)
-    with col6:
-        goals_assists = st.number_input("أهداف/صناعة", value=10)
-    with col7:
-        discipline = st.number_input("مستوى الانضباط (1-10)", min_value=1, max_value=10, value=8)
+    with col5: matches = st.number_input("مباريات آخر موسم", value=30)
+    with col6: goals_assists = st.number_input("أهداف/صناعة", value=10)
+    with col7: fame = st.slider("الشهرة الجماهيرية", 1, 5, 2)
 
-    # Calculate Button
-    if st.button("💰 احسب القيمة السوقية"):
-        with st.spinner("جاري تحليل البيانات بخوارزميات الذكاء الاصطناعي..."):
-            time.sleep(1.5) # Simulate processing
+    st.markdown("### 🏥 حالة طبية و انضباط")
+    col8, col9 = st.columns(2)
+    with col8: discipline = st.number_input("الانضباط (1-10)", 1, 10, 8)
+    with col9:
+        injury_status = st.selectbox("تاريخ الإصابات", ["سليم تماماً", "إصابات طفيفة", "متكرر الإصابات", "عائد من رباط صليبي"])
+        injury_map = {"سليم تماماً": 1.0, "إصابات طفيفة": 0.9, "متكرر الإصابات": 0.7, "عائد من رباط صليبي": 0.6}
+        injury_coef = injury_map[injury_status]
+
+    if st.button("💰 احسب القيمة السوقية (AI)"):
+        with st.spinner("جاري التنبؤ بالقيمة باستخدام النموذج..."):
+            time.sleep(1)
             
-            # --- Valuation Logic (Mirrors JS Logic) ---
-            
-            # 1. Weights based on position
-            physWeight = 0.4
-            techWeight = 0.6
-            pos_key = position.split("(")[-1].replace(")", "") # ST, GK, etc.
-            
-            if pos_key in ['CB', 'CDM', 'GK']:
-                physWeight = 0.6
-                techWeight = 0.4
-            
+            # Prepare Input Vector for Model
+            # Needs to calculate 'rating' first as feature
+            physWeight = 0.6 if position in ["قلب دفاع (CB)", "وسط دفاعي (CDM)", "حارس مرمى (GK)"] else 0.4
+            techWeight = 1 - physWeight
             avgPhysical = (speed + strength + stamina + agility) / 4
             avgTechnical = (skill + control + passing + shooting + vision) / 5
             overallRating = (avgPhysical * physWeight) + (avgTechnical * techWeight)
             
-            # 2. Base Value (Exponential Growth)
-            baseValue = 50000
-            ratingFactor = pow(1.12, (overallRating - 50))
-            valFromRating = baseValue * ratingFactor
-            if valFromRating < baseValue:
-                valFromRating = baseValue
-                
-            # 3. Age Factor
-            ageMultiplier = 1.0
-            if age < 22:
-                ageMultiplier = 1.0 + ((22 - age) * 0.15)
-            elif age > 28:
-                ageMultiplier = max(0.1, 1.0 - ((age - 28) * 0.15))
-            else:
-                ageMultiplier = 1.1
+            # [age, height, league_coef, influence_mult, rating, matches, goals_assists, discipline, injury_coef, fame]
+            input_features = pd.DataFrame([{
+                'age': age,
+                'height': height,
+                'league_coef': league_coef,
+                'influence_mult': influence_mult,
+                'rating': overallRating,
+                'matches': matches,
+                'goals_assists': goals_assists,
+                'discipline': discipline,
+                'injury_coef': injury_coef,
+                'fame': fame
+            }])
             
-            # 4. Performance Factor
-            contributionRatio = goals_assists / matches if matches > 0 else 0
-            perfMultiplier = 1.0
+            # Predict
+            prediction = model.predict(input_features)[0]
             
-            if contributionRatio > 0.8: perfMultiplier = 1.5
-            elif contributionRatio > 0.5: perfMultiplier = 1.25
-            elif contributionRatio < 0.1 and pos_key in ['ST', 'RW/LW', 'CAM']: perfMultiplier = 0.8
+            # Post-process (Build penalties logic tailored for specific positions can be applied on top if model data didn't catch it fully, 
+            # but ideally model catches it. For now leaving pure prediction is better for ML authenticity)
             
-            # 5. Build Penalty
-            buildMultiplier = 1.0
-            if pos_key == 'CB' and height < 175: buildMultiplier *= 0.8
-            if pos_key == 'GK' and height < 180: buildMultiplier *= 0.7
-            
-            # 6. Final Calculation
-            estimatedValue = valFromRating * ageMultiplier * league_coef * influence_mult * perfMultiplier * buildMultiplier
-            
-            # 7. Randomness
-            randomVar = 0.9 + random.random() * 0.2
-            estimatedValue *= randomVar
-            
-            if estimatedValue < 5000: estimatedValue = 5000
-            
-            # 8. Results
-            final_value = round(estimatedValue)
+            final_value = round(prediction)
             formatted_value = f"${final_value:,.0f}"
             
-            # Classification
+            # Class Logic
             player_class = "لاعب هاوٍ / ناشئ"
-            comment = "يحتاج لتطوير كبير للوصول للمستوى الاحترافي."
-            
-            if final_value > 80000000:
-                player_class = "أيقونة عالمية 🌍👑"
-                comment = "لاعب مرشح للكرة الذهبية، قيمة تسويقية وفنية هائلة."
-            elif final_value > 40000000:
-                player_class = "سوبر ستار ⭐"
-                comment = "نجم صف أول في أكبر الدوريات الأوروبية."
-            elif final_value > 15000000:
-                player_class = "لاعب دولي محترف 🔥"
-                comment = "لاعب أساسي في دوريات القمة، يمتلك جودة عالية."
-            elif final_value > 3000000:
-                player_class = "لاعب جيد جداً ✅"
-                comment = "خيار ممتاز للأندية المتوسطة في الدوريات الكبرى."
-            elif final_value > 500000:
-                player_class = "لاعب محترف ⚽"
-                comment = "مناسب للدوريات المتوسطة أو كبديل في الفرق الكبرى."
+            comment = "يحتاج لتطوير كبير."
+            if final_value > 80000000: player_class, comment = "أيقونة عالمية 🌍👑", "مرشح للكرة الذهبية."
+            elif final_value > 40000000: player_class, comment = "سوبر ستار ⭐", "نجم صف أول."
+            elif final_value > 15000000: player_class, comment = "لاعب دولي محترف 🔥", "جودة عالية."
+            elif final_value > 3000000: player_class, comment = "لاعب جيد جداً ✅", "خيار ممتاز."
+            elif final_value > 500000: player_class, comment = "لاعب محترف ⚽", "جيد للدوريات المتوسطة."
 
-            # League Recommendation
-            league_text = "الدوريات المحلية"
-            if overallRating > 85: league_text = "الدوري الإنجليزي / الإسباني (Top Tier)"
-            elif overallRating > 75: league_text = "الدوري الفرنسي / الألماني / السعودي (High Tier)"
-            elif overallRating > 65: league_text = "الدوري البرتغالي / التركي / البلجيكي"
-
-            # Display
             st.markdown(f"""
             <div class="result-box">
-                <h2 style="color: #39ff14;">نتائج التحليل</h2>
+                <h2 style="color: #00e5ff;">نتائج التنبؤ (Random Forest)</h2>
                 <div class="market-value">{formatted_value}</div>
                 <div class="player-class">{player_class}</div>
                 <ul style="list-style: none; text-align: right; margin-top: 1.5rem; color: #cbd5e1;">
                     <li>📝 <strong>التقييم الفني:</strong> {int(overallRating)}/100</li>
                     <li>💡 <strong>التصنيف:</strong> {comment}</li>
-                    <li>🏆 <strong>المستوى المناسب:</strong> {league_text}</li>
                 </ul>
             </div>
             """, unsafe_allow_html=True)
