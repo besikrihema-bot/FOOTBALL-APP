@@ -246,15 +246,20 @@ if st.button("تحديث التقييم 💰"):
         # Display
         s_val = f"${final_val:,.0f}"
         
-        # Badge
-        badge = "💎" if final_val > 50000000 else "🔥" if final_val > 10000000 else "⚽"
+        # Class Logic (Restored)
+        player_class = "لاعب هاوٍ / ناشئ"
+        if final_val > 80000000: player_class = "أيقونة عالمية 🌍�"
+        elif final_val > 40000000: player_class = "سوبر ستار ⭐"
+        elif final_val > 15000000: player_class = "لاعب دولي محترف 🔥"
+        elif final_val > 3000000: player_class = "لاعب جيد جداً ✅"
+        elif final_val > 500000: player_class = "لاعب محترف ⚽"
         
         st.markdown(f"""
         <div class="result-card">
             <h3 style="color:#94a3b8; margin:0;">القيمة السوقية التقديرية</h3>
             <div style="font-size:3.5rem; font-weight:800; color:#2dd4bf; margin:10px 0;">{s_val}</div>
-            <div style="font-size:1.2rem; color:#e2e8f0; background:rgba(255,255,255,0.1); display:inline-block; padding:5px 15px; border-radius:20px;">
-                {badge} {fame_sel}
+            <div style="font-size:1.5rem; color:#e2e8f0; background:rgba(255,255,255,0.1); display:inline-block; padding:10px 20px; border-radius:20px; margin-top:10px;">
+                {player_class}
             </div>
         </div>
         """, unsafe_allow_html=True)
